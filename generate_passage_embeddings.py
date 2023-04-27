@@ -11,6 +11,7 @@ import csv
 import logging
 import pickle
 from pathlib import Path
+from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -34,7 +35,7 @@ def embed_passages(opt, passages, model, tokenizer):
     total = 0
     allids, allembeddings = [], []
     with torch.no_grad():
-        for k, (ids, text_ids, text_mask) in enumerate(dataloader):
+        for k, (ids, text_ids, text_mask) in tqdm(enumerate(dataloader), total=len(dataloader)):
             embeddings = model.embed_text(
                 text_ids=text_ids.cuda(), 
                 text_mask=text_mask.cuda(), 
