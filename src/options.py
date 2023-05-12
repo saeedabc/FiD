@@ -77,7 +77,7 @@ class Options():
                         help="Batch size per GPU/CPU for training.")
         self.parser.add_argument('--maxload', type=int, default=-1)
 
-        self.parser.add_argument("--local_rank", type=int, default=-1,
+        self.parser.add_argument("--local-rank", type=int, default=-1,  # changed --local_rank to --local-rank for torch.distributed.launch to work
                         help="For distributed training: local_rank")
         self.parser.add_argument("--main_port", type=int, default=-1,
                         help="Main port (for multi-node SLURM jobs)")

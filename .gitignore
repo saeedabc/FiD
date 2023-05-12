@@ -161,6 +161,5 @@ cython_debug/
 
 # Custom
 checkpoint/
-commonsense_data/
-conceptnet_data/
 pretrained_models/
+*_data/

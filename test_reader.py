@@ -6,6 +6,8 @@
 
 import torch
 import transformers
+import datasets
+
 import numpy as np
 from pathlib import Path
 import torch.distributed as dist
@@ -20,6 +22,12 @@ import src.evaluation
 import src.model
 
 def evaluate(model, dataset, dataloader, tokenizer, opt):
+    metric_kwargs = dict(num_process=opt.world_size, process_id=opt.global_rank)
+    # print(f'metric_kwargs = {metric_kwargs}')
+    bleu = datasets.load_metric('sacrebleu', **metric_kwargs)
+    rouge = datasets.load_metric('rouge', **metric_kwargs)
+    meteor = datasets.load_metric('meteor', **metric_kwargs)
+
     loss, curr_loss = 0.0, 0.0
     model.eval()
     if hasattr(model, "module"):
@@ -55,6 +63,11 @@ def evaluate(model, dataset, dataloader, tokenizer, opt):
                     score = src.evaluation.ems(ans, example['answers'])
                     exactmatch.append(score)
 
+                    # print(ans, example['answers'])
+                    bleu.add(prediction=ans, reference=example['answers'])
+                    rouge.add(prediction=ans, reference=example['answers'])
+                    meteor.add(prediction=ans, reference=example['answers'])
+
                 if opt.write_results:
                     fw.write(str(example['id']) + "\t" + ans + '\n')
                 if opt.write_crossattention_scores:
@@ -67,15 +80,25 @@ def evaluate(model, dataset, dataloader, tokenizer, opt):
                 if len(exactmatch) == 0:
                     log += '| no answer to compute scores'
                 else:
-                    log += f' | average = {np.mean(exactmatch):.3f}'
+                    log += f' | EM = {np.mean(exactmatch):.3f}'
                 logger.warning(log)
 
-    logger.warning(f'Process rank:{opt.global_rank}, total {total} | average = {np.mean(exactmatch):.3f}')
+    logger.warning(f'Process rank:{opt.global_rank}, total {total} | EM = {np.mean(exactmatch):.3f}')
     if opt.is_distributed:
         torch.distributed.barrier()
-    score, total = src.util.weighted_average(np.mean(exactmatch), total, opt)
+    emscore, total = src.util.weighted_average(np.mean(exactmatch), total, opt)
     
-    return score, total
+    rouge_metrics = rouge.compute()
+    bleu_metrics = bleu.compute()
+    meteor_metrics = meteor.compute()
+    metrics = {}
+    if opt.is_main:
+        metrics |= {k: v.mid.fmeasure * 100 for k, v in rouge_metrics.items()}
+        metrics['sacrebleu'] = bleu_metrics['score']
+        metrics['meteor'] = meteor_metrics['meteor'] * 100
+        metrics = {k: round(v, 4) for k, v in metrics.items()}
+
+    return emscore, total, metrics
 
 
 if __name__ == "__main__":
@@ -100,7 +123,6 @@ if __name__ == "__main__":
 
 
     tokenizer = transformers.T5Tokenizer.from_pretrained('t5-base', return_dict=False)
-
     collator_function = src.data.Collator(opt.text_maxlength, tokenizer)
     eval_examples = src.data.load_data(
         opt.eval_data, 
@@ -126,9 +148,9 @@ if __name__ == "__main__":
     model = model.to(opt.device)
 
     logger.info("Start eval")
-    exactmatch, total = evaluate(model, eval_dataset, eval_dataloader, tokenizer, opt)
+    emscore, total, metrics = evaluate(model, eval_dataset, eval_dataloader, tokenizer, opt)
 
-    logger.info(f'EM {100*exactmatch:.2f}, Total number of example {total}')
+    logger.info(f'EM {100*emscore:.2f}, Total number of example {total}, Metrics {metrics}')
 
     if opt.write_results and opt.is_main:
         glob_path = Path(opt.checkpoint_dir) / opt.name / 'test_results'
