@@ -91,23 +91,32 @@ def validate(data, workers_num):
     return match_stats.questions_doc_hits
 
 
-def add_passages(data, passages, top_passages_and_scores):
+def add_passages(data, passages, top_passages_and_scores, keep_treshold=75):
     # add passages to original data
     merged_data = []
     assert len(data) == len(top_passages_and_scores)
-    for i, d in enumerate(data):
+
+    data = {
+        'model': 'DPR',
+        'k': None,
+        'data': data
+    }
+    for i, d in enumerate(data['data']):
         results_and_scores = top_passages_and_scores[i]
         docs = [passages[doc_id] for doc_id in results_and_scores[0]]
         scores = [str(score) for score in results_and_scores[1]]
         ctxs_num = len(docs)
-        d['ctxs'] =[
+        
+        data['k'] = ctxs_num
+        d['ctxs'] = [
                 {
                     'id': results_and_scores[0][c],
                     'title': docs[c][1],
                     'text': docs[c][0],
                     'score': scores[c],
-                } for c in range(ctxs_num)
+                } for c in range(ctxs_num) if scores[c] >= keep_treshold
             ] 
+    return data
 
 def add_hasanswer(data, hasanswer):
     # add hasanswer to data
@@ -155,9 +164,11 @@ def main(opt):
     passages = src.util.load_passages(args.passages)
     passages = {x[0]:(x[1], x[2]) for x in passages}
 
-    add_passages(data, passages, top_ids_and_scores)
-    hasanswer = validate(data, args.validation_workers)
-    add_hasanswer(data, hasanswer)
+    data = add_passages(data, passages, top_ids_and_scores)
+
+    # hasanswer = validate(data, args.validation_workers)
+    # add_hasanswer(data, hasanswer)
+
     output_path = Path(args.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output_path, 'w') as fout:
