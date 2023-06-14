@@ -91,7 +91,7 @@ def validate(data, workers_num):
     return match_stats.questions_doc_hits
 
 
-def add_passages(data, passages, top_passages_and_scores, keep_treshold=75):
+def add_passages(data, passages, top_passages_and_scores, score_threshold=None):
     # add passages to original data
     merged_data = []
     assert len(data) == len(top_passages_and_scores)
@@ -99,6 +99,7 @@ def add_passages(data, passages, top_passages_and_scores, keep_treshold=75):
     data = {
         'model': 'DPR',
         'k': None,
+        'score_threshold': score_threshold,
         'data': data
     }
     for i, d in enumerate(data['data']):
@@ -114,7 +115,7 @@ def add_passages(data, passages, top_passages_and_scores, keep_treshold=75):
                     'title': docs[c][1],
                     'text': docs[c][0],
                     'score': scores[c],
-                } for c in range(ctxs_num) if scores[c] >= keep_treshold
+                } for c in range(ctxs_num) if (score_threshold is None) or (float(scores[c]) >= score_threshold)
             ] 
     return data
 
@@ -164,7 +165,7 @@ def main(opt):
     passages = src.util.load_passages(args.passages)
     passages = {x[0]:(x[1], x[2]) for x in passages}
 
-    data = add_passages(data, passages, top_ids_and_scores)
+    data = add_passages(data, passages, top_ids_and_scores, opt.score_threshold)
 
     # hasanswer = validate(data, args.validation_workers)
     # add_hasanswer(data, hasanswer)
@@ -185,6 +186,7 @@ if __name__ == '__main__':
     parser.add_argument('--passages_embeddings', type=str, default=None, help='Glob path to encoded passages')
     parser.add_argument('--output_path', type=str, default=None, help='Results are written to output_path')
     parser.add_argument('--n-docs', type=int, default=100, help="Number of documents to retrieve per questions")
+    parser.add_argument('--score_threshold', type=float, default=None, help="Keep the context documents with score above score_threshold if provided")
     parser.add_argument('--validation_workers', type=int, default=32,
                         help="Number of parallel processes to validate results")
     parser.add_argument('--per_gpu_batch_size', type=int, default=64, help="Batch size for question encoding")
@@ -199,7 +201,6 @@ if __name__ == '__main__':
                         help='Number of subquantizer used for vector quantization, if 0 flat index is used')
     parser.add_argument("--n-bits", type=int, default=8, 
                         help='Number of bits per subquantizer')
-
 
     args = parser.parse_args()
     src.slurm.init_distributed_mode(args)
